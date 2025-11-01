@@ -30,9 +30,8 @@ const hashToken = (token) => crypto.createHash('sha256').update(token).digest('h
 
 const cookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production', // set true in prod (requires HTTPS)
-  sameSite: 'Strict', // or 'Lax' depending on your frontend flows
-  // maxAge is set per cookie below (ms)
+  secure: process.env.NODE_ENV === "production", // HTTPS only in production
+  sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
 };
 
 exports.register = async (req, res) => {
@@ -40,16 +39,17 @@ exports.register = async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(422).json({ errors: errors.array() });
 
-    const { name, email, password, role } = req.body;
+    const { name, email, password} = req.body;
     const existing = await User.findOne({ email });
     if (existing) return res.status(409).json({ message: 'Email already registered' });
 
     const hashed = await bcrypt.hash(password, 12);
-    const user = await User.create({ name, email, password: hashed, role: role || 'user' });
+    const user = await User.create({ name, email, password: hashed});
 
     // tokens
     const accessToken = signAccessToken(user);
     const refreshToken = signRefreshToken(user);
+
     user.refreshTokenHash = hashToken(refreshToken);
     await user.save();
 
@@ -62,7 +62,7 @@ exports.register = async (req, res) => {
     return res.status(201).json({
       message: 'Registered',
       accessToken,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role }
+      user: { id: user._id, name: user.name, email: user.email }
     });
   } catch (err) {
     console.error(err);
@@ -99,7 +99,7 @@ exports.login = async (req, res) => {
     return res.json({
       message: 'Logged in',
       accessToken,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role }
+      user: { id: user._id, name: user.name, email: user.email }
     });
   } catch (err) {
     console.error(err);
@@ -137,7 +137,7 @@ exports.refreshToken = async (req, res) => {
 
     return res.json({
       accessToken: newAccessToken,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role }
+      user: { id: user._id, name: user.name, email: user.email}
     });
   } catch (err) {
     console.error(err);

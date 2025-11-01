@@ -1,16 +1,15 @@
-const express = require('express');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const User = require('../models/user');
-
+const express = require("express");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const User = require("../models/user");
 const router = express.Router();
 
-// Generate Tokens
+// ------------------- TOKEN GENERATORS -------------------
 const generateAccessToken = (user) => {
   return jwt.sign(
     { userId: user._id, role: user.role },
     process.env.JWT_ACCESS_SECRET,
-    { expiresIn: process.env.ACCESS_TOKEN_EXPIRES_IN || "15m" }
+    { expiresIn: "15m" }
   );
 };
 
@@ -18,134 +17,124 @@ const generateRefreshToken = (user) => {
   return jwt.sign(
     { userId: user._id },
     process.env.JWT_REFRESH_SECRET,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || "7d" }
+    { expiresIn: "7d" }
   );
 };
 
 // ------------------- REGISTER -------------------
-router.post('/register', async (req, res) => {
+router.post("/register", async (req, res) => {
   try {
-    const { name, email, password, role, adminSecret } = req.body;
+    const { name, email, password } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(422).json({ message: 'All fields are required' });
-    }
+    if (!name || !email || !password)
+      return res.status(422).json({ message: "All fields required" });
 
-    const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ message: 'User already exists' });
+    const exists = await User.findOne({ email });
+    if (exists) return res.status(400).json({ message: "User exists" });
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashed = await bcrypt.hash(password, 10);
 
-    // default role is "user"
-    let userRole = "user";
-
-    const newUser = new User({
+    const user = await User.create({
       name,
       email,
-      password: hashedPassword,
-      role: userRole
+      password: hashed,
+      role: "user"
     });
 
-    await newUser.save();
-
-    res.status(201).json({ message: `User registered as ${userRole} successfully`, user: newUser });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(201).json({ message: "User registered ✅", user });
+  } catch (err) {
+    console.error("REGISTER ERROR:", err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
 // ------------------- LOGIN -------------------
-router.post('/login', async (req, res) => {
+router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password)
-      return res.status(422).json({ message: 'Email and password are required' });
-
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: 'Invalid Email' });
+    if (!user) return res.status(400).json({ message: "Invalid email" });
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: 'Invalid password' });
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(400).json({ message: "Invalid password" });
 
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    // You can store refresh tokens in DB if you want to manage multiple devices
-    user.refreshTokenHash = refreshToken;
+    user.refreshToken = refreshToken;
     await user.save();
 
-    // Send Refresh Token Cookie
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",  // true in render/vercel only
+      secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
       path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
-    return res.status(200).json({
-      message: "Login successful",
+    res.json({
+      message: "Login success ✅",
       accessToken,
-      user: {
-        id: user._id,
-        email: user.email,
-        role: user.role
-      }
+      user: { id: user._id, email: user.email, role: user.role }
     });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
+  } catch (err) {
+    console.error("LOGIN ERROR:", err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-// ------------------- REFRESH TOKEN -------------------
-router.post('/refresh', async (req, res) => {
-  const { token } = req.body;
-
-  if (!token) return res.status(401).json({ message: 'Refresh token required' });
-
+// ------------------- REFRESH ACCESS TOKEN -------------------
+router.post("/refresh", async (req, res) => {
   try {
-    const payload = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+    const token = req.cookies.refreshToken;
+    if (!token) return res.status(401).json({ message: "Refresh token missing" });
 
-    const user = await User.findById(payload.userId);
-    if (!user || user.refreshToken !== token) {
-      return res.status(403).json({ message: 'Invalid refresh token' });
-    }
+    const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
+    const user = await User.findById(decoded.userId);
+
+    if (!user || user.refreshToken !== token)
+      return res.status(403).json({ message: "Invalid refresh token" });
 
     const newAccessToken = generateAccessToken(user);
     const newRefreshToken = generateRefreshToken(user);
 
-    // update refresh token in DB
     user.refreshToken = newRefreshToken;
     await user.save();
 
-    res.json({
-      accessToken: newAccessToken,
-      refreshToken: newRefreshToken
+    res.cookie("refreshToken", newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000
     });
-  } catch (error) {
-    return res.status(403).json({ message: 'Invalid or expired refresh token' });
+
+    res.json({ accessToken: newAccessToken });
+  } catch (err) {
+    console.error("REFRESH ERROR:", err);
+    return res.status(403).json({ message: "Expired or invalid refresh token" });
   }
 });
 
 // ------------------- LOGOUT -------------------
-router.post('/logout', async (req, res) => {
-  const { token } = req.body; // refresh token
-
+router.post("/logout", async (req, res) => {
   try {
-    const user = await User.findOne({ refreshToken: token });
-    if (!user) return res.status(400).json({ message: 'User not found' });
+    const token = req.cookies.refreshToken;
+    if (!token) return res.json({ message: "Already logged out" });
 
-    user.refreshToken = null;
-    await user.save();
+    await User.findOneAndUpdate({ refreshToken: token }, { refreshToken: null });
 
-    res.json({ message: 'Logged out successfully' });
-  } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+      path: "/",
+    });
+
+    res.json({ message: "Logout success ✅" });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
   }
 });
 

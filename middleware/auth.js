@@ -3,52 +3,60 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
 
-// ✅ Verify JWT Token (Protect Routes)
 const protect = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    let token;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ 
+    // ✅ Get token from Authorization header
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      token = authHeader.split(" ")[1];
+    }
+
+    // ✅ Fallback: token from cookie
+    if (!token && req.cookies && req.cookies.accessToken) {
+      token = req.cookies.accessToken;
+    }
+
+    if (!token) {
+      return res.status(401).json({
         success: false,
-        message: "Unauthorized access. Please login again." 
+        message: "Unauthorized access. Please login again.",
       });
     }
 
-    const token = authHeader.split(" ")[1];
-
-    // Verify token
+    // ✅ Verify token
     let payload;
     try {
       payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
     } catch (err) {
       return res.status(401).json({
         success: false,
-        message: "Session expired. Please login again."
+        message: "Session expired. Please login again.",
       });
     }
 
-    // ✅ Get User
+    // ✅ Get user
     const user = await User.findById(payload.userId).select("-password");
-    
     if (!user) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: "User not found. Please login again." 
+        message: "User not found. Please login again.",
       });
     }
 
     req.user = user;
     next();
   } catch (err) {
-    return res.status(500).json({ 
+    console.log("Auth error:", err);
+    return res.status(500).json({
       success: false,
-      message: "Authentication error" 
+      message: "Authentication error",
     });
   }
 };
 
-// ✅ Role-based Access Control
+// ✅ Role-Based Access
 const authorize = (roles = []) => {
   if (typeof roles === "string") roles = [roles];
 
@@ -58,9 +66,9 @@ const authorize = (roles = []) => {
     }
 
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
-        message: "Access denied. Admin only." 
+        message: "Access denied. Admin only.",
       });
     }
 

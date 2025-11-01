@@ -11,58 +11,61 @@ const { protect } = require('./middleware/auth');
 const productRoutes = require('./routes/productRoutes');
 
 const app = express();
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 8000;
 
-// CORS before helmet
-app.use(cors({
-  origin: process.env.CLIENT_URL, 
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
+// ✅ Allowed frontend URLs
+const allowedOrigins = process.env.CLIENT_URL.split(",");
 
-
-// Allow credentials & headers
+// ✅ CORS Middleware
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", process.env.CLIENT_URL);
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  const origin = req.headers.origin;
+
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  // ✅ Handle browser preflight
+  if (req.method === "OPTIONS") return res.sendStatus(200);
+
   next();
 });
 
-// Helmet after CORS
+// ✅ Security Middlewares
 app.use(helmet());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Rate limiter
+// ✅ Rate Limiter
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
-  message: { message: 'Too many requests, try again later.' }
+  message: { message: "Too many requests, try again later." }
 });
 
-// Routes
-app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/products', productRoutes);
+// ✅ Routes
+app.use("/api/auth", authLimiter, authRoutes);
+app.use("/api/products", productRoutes);
 
-// Protected test route
-app.get('/api/dashboard', protect, (req, res) => {
+// ✅ Protected test route
+app.get("/api/dashboard", protect, (req, res) => {
   res.json({
     message: `Welcome, user with ID ${req.user.id}`,
     role: req.user.role
   });
 });
 
-// Root route
-app.get('/', (req, res) => {
-  res.json({ Message: "Success" });
+// ✅ Root test route
+app.get("/", (req, res) => {
+  res.json({ message: "Server running ✅" });
 });
 
-// Start server
+// ✅ Start Server
 app.listen(PORT, () => {
   connectDb();
-  console.log("✅ Server Started on port:", PORT);
+  console.log(`✅ Server running on port ${PORT}`);
 });
