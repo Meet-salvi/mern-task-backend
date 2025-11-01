@@ -20,7 +20,7 @@ app.use(cookieParser());
 
 app.use(cors({
   origin: [
-    process.env.CLIENT_URL,
+    "https://mern-task-backend-e65k.onrender.com",
     "http://localhost:5173"
   ],
   credentials: true
