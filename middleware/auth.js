@@ -1,5 +1,4 @@
 // middleware/authMiddleware.js
-
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
 
@@ -8,67 +7,61 @@ const protect = async (req, res, next) => {
     let token;
 
     // ✅ Get token from Authorization header
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.split(" ")[1];
-    }
-
-    // ✅ Fallback: token from cookie
-    if (!token && req.cookies && req.cookies.accessToken) {
-      token = req.cookies.accessToken;
+    if (req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
+      token = req.headers.authorization.split(" ")[1];
     }
 
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: "Unauthorized access. Please login again.",
+        message: "Access denied. No token provided.",
       });
     }
 
     // ✅ Verify token
-    let payload;
+    let decoded;
     try {
-      payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+      decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
     } catch (err) {
       return res.status(401).json({
         success: false,
-        message: "Session expired. Please login again.",
+        message: "Token expired or invalid. Please log in again.",
       });
     }
 
-    // ✅ Get user
-    const user = await User.findById(payload.userId).select("-password");
+    // ✅ Get user from DB
+    const user = await User.findById(decoded.userId).select("-password");
     if (!user) {
       return res.status(401).json({
         success: false,
-        message: "User not found. Please login again.",
+        message: "User no longer exists.",
       });
     }
 
     req.user = user;
     next();
   } catch (err) {
-    console.log("Auth error:", err);
+    console.error("AUTH MIDDLEWARE ERROR:", err);
     return res.status(500).json({
       success: false,
-      message: "Authentication error",
+      message: "Server authentication error",
     });
   }
 };
 
-// ✅ Role-Based Access
+// ✅ Role based access control
 const authorize = (roles = []) => {
   if (typeof roles === "string") roles = [roles];
 
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ message: "Please login first" });
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,
-        message: "Access denied. Admin only.",
+        message: "Access denied. You do not have permission.",
       });
     }
 
