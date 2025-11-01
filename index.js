@@ -13,23 +13,31 @@ const productRoutes = require('./routes/productRoutes');
 const app = express();
 const PORT = process.env.PORT;
 
+// CORS must come before helmet
+app.use(cors({
+  origin: process.env.CLIENT_URL, 
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
+// Allow preflight (OPTIONS)
+app.options('*', cors());
+
+// Allow credentials manually too
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", process.env.CLIENT_URL);
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  next();
+});
+
+// Helmet after CORS
 app.use(helmet());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-
-app.use(cors({
-  origin: process.env.CLIENT_URL,
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
-
-// Allow cookies/token to be sent with requests
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Credentials", "true");
-  next();
-});
 
 // ✅ Rate limiter
 const authLimiter = rateLimit({
@@ -38,11 +46,11 @@ const authLimiter = rateLimit({
   message: { message: 'Too many requests, try again later.' }
 });
 
-// ✅ Routes
+// Routes
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/products', productRoutes);
 
-// ✅ Protected route
+// Protected
 app.get('/api/dashboard', protect, (req, res) => {
   res.json({
     message: `Welcome, user with ID ${req.user.id}`,
@@ -50,7 +58,7 @@ app.get('/api/dashboard', protect, (req, res) => {
   });
 });
 
-app.get('/', async (req, res) => {
+app.get('/', (req, res) => {
   res.json({ Message: "Success" });
 });
 
