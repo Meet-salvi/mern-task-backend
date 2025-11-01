@@ -13,7 +13,7 @@ const productRoutes = require('./routes/productRoutes');
 const app = express();
 const PORT = process.env.PORT;
 
-// CORS must come before helmet
+// CORS before helmet
 app.use(cors({
   origin: process.env.CLIENT_URL, 
   credentials: true,
@@ -21,10 +21,10 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// Allow preflight (OPTIONS)
-app.options('*', cors());
+// Handle OPTIONS (Express v5 safe)
+app.options("/*", cors());
 
-// Allow credentials manually too
+// Allow credentials & headers
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", process.env.CLIENT_URL);
   res.header("Access-Control-Allow-Credentials", "true");
@@ -39,7 +39,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// ✅ Rate limiter
+// Rate limiter
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
@@ -50,7 +50,7 @@ const authLimiter = rateLimit({
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/products', productRoutes);
 
-// Protected
+// Protected test route
 app.get('/api/dashboard', protect, (req, res) => {
   res.json({
     message: `Welcome, user with ID ${req.user.id}`,
@@ -58,10 +58,12 @@ app.get('/api/dashboard', protect, (req, res) => {
   });
 });
 
+// Root route
 app.get('/', (req, res) => {
   res.json({ Message: "Success" });
 });
 
+// Start server
 app.listen(PORT, () => {
   connectDb();
   console.log("✅ Server Started on port:", PORT);
