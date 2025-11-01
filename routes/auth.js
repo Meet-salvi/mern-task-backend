@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/user");
 const router = express.Router();
 
-// ------------------- TOKEN GENERATORS -------------------
+// ------------------ TOKEN HELPERS ------------------
 const generateAccessToken = (user) => {
   return jwt.sign(
     { userId: user._id, role: user.role },
@@ -15,17 +15,16 @@ const generateAccessToken = (user) => {
 
 const generateRefreshToken = (user) => {
   return jwt.sign(
-    { userId: user._id },
+    { id: user._id, email: user.email },
     process.env.JWT_REFRESH_SECRET,
-    { expiresIn: "7d" }
+    { expiresIn: "30d" }
   );
 };
 
-// ------------------- REGISTER -------------------
+// ------------------ REGISTER ------------------
 router.post("/register", async (req, res) => {
   try {
     const { name, email, password } = req.body;
-
     if (!name || !email || !password)
       return res.status(422).json({ message: "All fields required" });
 
@@ -41,35 +40,23 @@ router.post("/register", async (req, res) => {
       role: "user",
     });
 
-    // ✅ Create Refresh Token
-    const refreshToken = jwt.sign(
-      { id: user._id, email: user.email },
-      process.env.JWT_REFRESH_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    // ✅ Hash refresh token and store in DB
+    const refreshToken = generateRefreshToken(user);
     const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
+
     user.refreshTokenHash = hashedRefreshToken;
     await user.save();
 
-    // ✅ Set refresh token cookie
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      secure: true,        // ✅ true only on HTTPS
-      sameSite: "none",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       path: "/",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     return res.status(201).json({
       message: "User registered ✅",
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        isVerified: user.isVerified,
-      },
+      user: { id: user._id, name: user.name, email: user.email },
     });
 
   } catch (err) {
@@ -78,7 +65,7 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// ------------------- LOGIN -------------------
+// ------------------ LOGIN ------------------
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -89,16 +76,13 @@ router.post("/login", async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ message: "Invalid password" });
 
-    // ✅ Generate tokens
     const accessToken = generateAccessToken(user);
     const refreshToken = generateRefreshToken(user);
 
-    // ✅ Hash refresh token before saving to DB
     const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
     user.refreshTokenHash = hashedRefreshToken;
     await user.save();
 
-    // ✅ Cookie settings based on environment
     const isProd = process.env.NODE_ENV === "production";
 
     res.cookie("refreshToken", refreshToken, {
@@ -114,41 +98,35 @@ router.post("/login", async (req, res) => {
       accessToken,
       user: { id: user._id, email: user.email }
     });
+
   } catch (err) {
     console.error("LOGIN ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-
-// ------------------- REFRESH ACCESS TOKEN -------------------
+// ------------------ REFRESH ACCESS TOKEN ------------------
 router.post("/refresh", async (req, res) => {
   try {
     const token = req.cookies.refreshToken;
     if (!token) return res.status(401).json({ message: "Refresh token missing" });
 
-    // ✅ Verify refresh token
     const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
-
     const user = await User.findById(decoded.id);
+
     if (!user || !user.refreshTokenHash)
       return res.status(403).json({ message: "Invalid refresh token" });
 
-    // ✅ Compare hashed refresh token from DB
     const isValid = await bcrypt.compare(token, user.refreshTokenHash);
-    if (!isValid)
-      return res.status(403).json({ message: "Invalid refresh token" });
+    if (!isValid) return res.status(403).json({ message: "Invalid token" });
 
-    // ✅ Generate new tokens
     const newAccessToken = generateAccessToken(user);
     const newRefreshToken = generateRefreshToken(user);
-
-    // ✅ Hash & store new refresh token
     const hashedNewRefresh = await bcrypt.hash(newRefreshToken, 10);
+
     user.refreshTokenHash = hashedNewRefresh;
     await user.save();
 
-    // ✅ Cookie settings
     const isProd = process.env.NODE_ENV === "production";
 
     res.cookie("refreshToken", newRefreshToken, {
@@ -160,29 +138,35 @@ router.post("/refresh", async (req, res) => {
     });
 
     return res.json({ accessToken: newAccessToken });
+
   } catch (err) {
     console.error("REFRESH ERROR:", err);
     return res.status(403).json({ message: "Expired or invalid refresh token" });
   }
 });
 
-// ------------------- LOGOUT -------------------
+// ------------------ LOGOUT ------------------
 router.post("/logout", async (req, res) => {
   try {
     const token = req.cookies.refreshToken;
     if (!token) return res.json({ message: "Already logged out" });
 
-    await User.findOneAndUpdate({ refreshToken: token }, { refreshToken: null });
+    const hashed = await bcrypt.hash(token, 10);
+    await User.findOneAndUpdate(
+      { refreshTokenHash: hashed },
+      { refreshTokenHash: null }
+    );
 
     res.clearCookie("refreshToken", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
       path: "/",
     });
 
     res.json({ message: "Logout success ✅" });
   } catch (err) {
+    console.error("LOGOUT ERROR:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
