@@ -19,12 +19,17 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 app.use(cors({
-  origin: [
-    "https://mern-task-backend-e65k.onrender.com",
-    "http://localhost:5173"
-  ],
-  credentials: true
+  origin: process.env.CLIENT_URL,
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
+
+// Allow cookies/token to be sent with requests
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Credentials", "true");
+  next();
+});
 
 // ✅ Rate limiter
 const authLimiter = rateLimit({
