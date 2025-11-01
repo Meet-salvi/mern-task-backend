@@ -74,7 +74,7 @@ router.post('/login', async (req, res) => {
     const refreshToken = generateRefreshToken(user);
 
     // You can store refresh tokens in DB if you want to manage multiple devices
-    user.refreshToken = refreshToken;
+    user.refreshTokenHash = refreshToken;
     await user.save();
 
     // Send Refresh Token Cookie
@@ -86,7 +86,6 @@ router.post('/login', async (req, res) => {
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
 
-    // Final Response
     return res.status(200).json({
       message: "Login successful",
       accessToken,
