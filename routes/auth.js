@@ -77,13 +77,26 @@ router.post('/login', async (req, res) => {
     user.refreshToken = refreshToken;
     await user.save();
 
-    // send tokens (here we send as JSON; you can also send refreshToken as httpOnly cookie)
-    res.json({
-      message: 'Login successful',
-      accessToken,
-      refreshToken,
-      user: { id: user._id, email: user.email, role: user.role }
+    // Send Refresh Token Cookie
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",  // true in render/vercel only
+      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
+
+    // Final Response
+    return res.status(200).json({
+      message: "Login successful",
+      accessToken,
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role
+      }
+    });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
