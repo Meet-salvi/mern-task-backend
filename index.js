@@ -21,8 +21,6 @@ app.use(cors({
   allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// Handle OPTIONS (Express v5 safe)
-app.options("/*", cors());
 
 // Allow credentials & headers
 app.use((req, res, next) => {
